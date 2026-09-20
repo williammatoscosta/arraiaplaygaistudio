@@ -21,8 +21,10 @@ export function useAudioPlayer() {
     return () => clearInterval(interval);
   }, [isPlaying]);
 
-  const play = useCallback((src: string, crossfadeSettings?: any) => {
+  const play = useCallback((src: string, crossfadeSettings?: any, onEnd?: () => void) => {
+    console.log('Play chamado:', src);
     if (howlRef.current && currentSrc === src) {
+      console.log('Mesma fonte, tentando retomar.');
       if (!howlRef.current.playing()) {
         howlRef.current.play();
       }
@@ -32,18 +34,20 @@ export function useAudioPlayer() {
     const mixDuration = crossfadeSettings?.manual.mixNextMseg || 2000;
     const mixEnabled = crossfadeSettings?.manual.mixNext;
 
+    console.log('Configurações de mixagem:', { mixEnabled, mixDuration });
+
     if (howlRef.current) {
       if (mixEnabled) {
-          // Fade-out na faixa anterior enquanto a nova começa em volume total
+          // Fade-out na faixa anterior
+          console.log('Aplicando fade-out na faixa anterior');
           howlRef.current.fade(1, 0, mixDuration);
-          nextHowlRef.current = howlRef.current;
+          const oldSound = howlRef.current;
           setTimeout(() => {
-              if (nextHowlRef.current) {
-                  nextHowlRef.current.stop();
-                  nextHowlRef.current = null;
-              }
+              console.log('Parando faixa anterior após fade-out');
+              oldSound.stop();
           }, mixDuration);
       } else {
+          console.log('Parando faixa anterior imediatamente');
           howlRef.current.stop();
       }
     }
@@ -53,13 +57,21 @@ export function useAudioPlayer() {
       html5: true,
       volume: 1, // Volume total imediato
       onplay: () => {
+        console.log('Faixa iniciada:', src);
         setIsPlaying(true);
         setDuration(sound.duration());
-        // Sem fade-in aqui
       },
       onpause: () => setIsPlaying(false),
       onstop: () => setIsPlaying(false),
-      onend: () => setIsPlaying(false)
+      onend: () => {
+        console.log('Faixa finalizada:', src);
+        setIsPlaying(false);
+        if (onEnd) onEnd();
+      },
+      onloaderror: (id, error) => {
+          console.error('Erro de carregamento Howler:', id, error);
+          if (onEnd) onEnd();
+      }
     });
     
     sound.play();

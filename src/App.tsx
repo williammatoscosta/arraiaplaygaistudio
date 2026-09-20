@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {useState, useEffect, useMemo} from 'react';
+import {useState, useEffect, useMemo, useCallback} from 'react';
 import {Folder, Calendar, Radio, RotateCw, Palette, Settings, Power, Play, Pause, SkipForward, Square, X} from 'lucide-react';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
@@ -76,7 +76,32 @@ export default function App() {
 
   const [showModal, setShowModal] = useState<'folder' | 'audio' | null>(null);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const { play, pause, stop, isPlaying, currentTime: audioCurrentTime, duration } = useAudioPlayer();
+
+  const [crossfadeSettings, setCrossfadeSettings] = useState({
+    autoSkip: false,
+    pauseAfterSkip: false,
+    enableCrossfade: true,
+    manual: {
+      mixNext: true,
+      mixNextMseg: 2000,
+      fadeOut: true,
+      fadeOutMseg: 2,
+      fadeIn: false,
+      fadeInMseg: 1000,
+    },
+    automatic: {
+      enabled: false,
+      mode: 'mix', // 'none' | 'pause' | 'mix'
+      pauseMseg: 1000,
+      mixMseg: 1000,
+      fadeIn: true,
+      fadeInMseg: 1000,
+      fadeOut: true,
+      fadeOutMseg: 1000,
+    }
+  });
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -99,14 +124,19 @@ export default function App() {
   // Função para obter duração real do áudio
   const getAudioDuration = (src: string): Promise<string> => {
     return new Promise((resolve) => {
+      console.log('Tentando obter duração para:', src);
       const audio = new Audio(src);
       audio.onloadedmetadata = () => {
         const totalSeconds = Math.floor(audio.duration);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
+        console.log('Duração obtida:', `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
         resolve(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
       };
-      audio.onerror = () => resolve('00:00');
+      audio.onerror = (e) => {
+        console.error('Erro ao carregar áudio para duração:', src, e);
+        resolve('00:00');
+      };
     });
   };
 
@@ -123,17 +153,15 @@ export default function App() {
   const remaining = Math.max(0, duration - audioCurrentTime);
   const finishTime = new Date(Date.now() + remaining * 1000).toLocaleTimeString('pt-BR', { hour12: false });
 
-  const handleNext = () => {
-    if (currentTrackIndex < playlist.length - 1) {
-      const nextIndex = currentTrackIndex + 1;
-      setCurrentTrackIndex(nextIndex);
-      // Reproduz a nova faixa automaticamente
-      const nextTrack = playlist[nextIndex];
-      if (nextTrack && nextTrack.src) {
-        play(nextTrack.src, crossfadeSettings);
+  const handleNext = useCallback(() => {
+    if (playlist.length > 0) {
+      const newPlaylist = playlist.slice(1);
+      setPlaylist(newPlaylist);
+      if (newPlaylist.length > 0) {
+        play(newPlaylist[0].src!, crossfadeSettings, handleNext);
       }
     }
-  };
+  }, [playlist, crossfadeSettings, play]);
   const [cartwall, setCartwall] = useState<({id: number, name: string} | null)[]>(() => {
       const saved = localStorage.getItem('roadic-cartwall');
       return saved ? JSON.parse(saved) : Array(16).fill(null);
@@ -188,29 +216,6 @@ export default function App() {
 
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const [isCrossfadeModalOpen, setIsCrossfadeModalOpen] = useState(false);
-  const [crossfadeSettings, setCrossfadeSettings] = useState({
-    autoSkip: false,
-    pauseAfterSkip: false,
-    enableCrossfade: true,
-    manual: {
-      mixNext: true,
-      mixNextMseg: 2000,
-      fadeOut: true,
-      fadeOutMseg: 2,
-      fadeIn: false,
-      fadeInMseg: 1000,
-    },
-    automatic: {
-      enabled: false,
-      mode: 'mix', // 'none' | 'pause' | 'mix'
-      pauseMseg: 1000,
-      mixMseg: 1000,
-      fadeIn: true,
-      fadeInMseg: 1000,
-      fadeOut: true,
-      fadeOutMseg: 1000,
-    }
-  });
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -361,7 +366,7 @@ export default function App() {
           <PanelResizeHandle className="w-1 bg-slate-800 hover:bg-blue-500 transition" />
           <Panel defaultSize={50} minSize={30}>
             <section 
-              className="w-full h-full flex flex-col bg-slate-900"
+              className="w-full h-full flex flex-col bg-slate-950"
             >
               <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                 <h2 className="text-lg font-medium">
@@ -388,8 +393,16 @@ export default function App() {
                             if (data) {
                                 const newItem: MediaItem = JSON.parse(data);
                                 const uniqueItem = { ...newItem, id: `${newItem.id}-${Date.now()}` };
-                                const duration = newItem.src ? await getAudioDuration(newItem.src) : '00:00';
-                                setPlaylist([ ...playlist, { ...uniqueItem, duration }]);
+                                
+                                // Adiciona instantaneamente com duração provisória
+                                setPlaylist(prev => [ ...prev, { ...uniqueItem, duration: '00:00' }]);
+                                
+                                // Atualiza a duração em background
+                                if (newItem.src) {
+                                    getAudioDuration(newItem.src).then(duration => {
+                                        setPlaylist(prev => prev.map(item => item.id === uniqueItem.id ? { ...item, duration } : item));
+                                    });
+                                }
                             }
                         }}
                     >
@@ -401,20 +414,30 @@ export default function App() {
                             playlistWithTimes.map((item, index) => (
                                 <tr 
                                     key={item.id} 
-                                    className={`border-b border-slate-800 transition ${index === currentTrackIndex ? 'bg-blue-900/30' : 'hover:bg-slate-800'}`}
-                                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-b-2', 'border-blue-500'); }}
-                                    onDragLeave={(e) => { e.currentTarget.classList.remove('border-b-2', 'border-blue-500'); }}
+                                    className={`border-b border-slate-800 transition ${index === currentTrackIndex ? 'bg-blue-900/30' : 'hover:bg-slate-800'} ${dragOverIndex === index ? 'border-b-2 border-blue-500' : ''}`}
+                                    onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index); }}
+                                    onDragLeave={() => setDragOverIndex(null)}
                                     onDrop={async (e) => {
                                         e.stopPropagation();
-                                        e.currentTarget.classList.remove('border-b-2', 'border-blue-500');
+                                        setDragOverIndex(null);
                                         const data = e.dataTransfer.getData('application/json');
                                         if (data) {
                                             const newItem: MediaItem = JSON.parse(data);
                                             const uniqueItem = { ...newItem, id: `${newItem.id}-${Date.now()}` };
-                                            const duration = newItem.src ? await getAudioDuration(newItem.src) : '00:00';
-                                            const newPlaylist = [...playlist];
-                                            newPlaylist.splice(index + 1, 0, { ...uniqueItem, duration });
-                                            setPlaylist(newPlaylist);
+                                            
+                                            // Adiciona instantaneamente
+                                            setPlaylist(prev => {
+                                                const newPlaylist = [...prev];
+                                                newPlaylist.splice(index + 1, 0, { ...uniqueItem, duration: '00:00' });
+                                                return newPlaylist;
+                                            });
+                                            
+                                            // Atualiza a duração em background
+                                            if (newItem.src) {
+                                                getAudioDuration(newItem.src).then(duration => {
+                                                    setPlaylist(prev => prev.map(item => item.id === uniqueItem.id ? { ...item, duration } : item));
+                                                });
+                                            }
                                         }
                                     }}
                                 >
@@ -484,12 +507,12 @@ export default function App() {
           </Panel>
         </PanelGroup>
       </main>
-      <footer className="h-24 border-t border-slate-800 bg-slate-950 flex items-center px-4 gap-4">
+      <footer className="h-20 border-t border-slate-800 bg-slate-950 flex items-center px-4 gap-4">
         <div className="flex gap-1 border-r border-slate-800 pr-4">
-          <button onClick={() => playlist[currentTrackIndex] && playlist[currentTrackIndex].src && play(playlist[currentTrackIndex].src!)} className="p-3 hover:bg-slate-700 rounded transition text-blue-400"><Play size={24} /></button>
-          <button onClick={pause} className="p-3 hover:bg-slate-700 rounded transition text-amber-400"><Pause size={24} /></button>
-          <button onClick={stop} className="p-3 hover:bg-slate-700 rounded transition text-red-400"><Square size={24} /></button>
-          <button onClick={handleNext} className="p-3 hover:bg-slate-700 rounded transition"><SkipForward size={24} /></button>
+          <button onClick={() => playlist[0] && playlist[0].src && play(playlist[0].src!, crossfadeSettings, handleNext)} className="p-2 hover:bg-slate-700 rounded transition text-blue-400"><Play size={20} /></button>
+          <button onClick={pause} className="p-2 hover:bg-slate-700 rounded transition text-amber-400"><Pause size={20} /></button>
+          <button onClick={stop} className="p-2 hover:bg-slate-700 rounded transition text-red-400"><Square size={20} /></button>
+          <button onClick={handleNext} className="p-2 hover:bg-slate-700 rounded transition"><SkipForward size={20} /></button>
         </div>
         <div className="flex-1 flex justify-between items-center gap-2">
             {[
@@ -499,8 +522,8 @@ export default function App() {
                 { label: 'HORA ATUAL', value: currentTime.toLocaleTimeString('pt-BR', { hour12: false }), color: 'text-blue-500' },
             ].map(item => (
                 <div key={item.label} className="flex-1 flex flex-col items-center justify-center mx-1">
-                    <span className="text-[10px] font-bold text-slate-500 tracking-wider mb-1">{item.label}</span>
-                    <span className={`text-xl font-mono font-bold ${item.color}`}>{item.value}</span>
+                    <span className="text-[9px] font-bold text-slate-500 tracking-wider mb-0.5">{item.label}</span>
+                    <span className={`text-lg font-mono font-bold ${item.color}`}>{item.value}</span>
                 </div>
             ))}
         </div>
