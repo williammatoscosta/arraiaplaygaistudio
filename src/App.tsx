@@ -47,12 +47,72 @@ export default function App() {
       { id: '9', name: 'Vinhetas Gerais', duration: '00:00', isFolder: true },
   ]);
   const [playlist, setPlaylist] = useState<MediaItem[]>([
-    { id: '101', name: 'Música de Teste 1', duration: '00:10', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-    { id: '102', name: 'Música de Teste 2', duration: '00:10', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+    { id: '101', name: 'Música de Teste 1', duration: '06:11', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+    { id: '102', name: 'Música de Teste 2', duration: '06:11', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
   ]);
+
+  useEffect(() => {
+    const updateDurations = async () => {
+      const updatedPlaylist = await Promise.all(
+        playlist.map(async (item) => {
+          if (item.src && item.duration === '06:11') {
+            const duration = await getAudioDuration(item.src);
+            return { ...item, duration };
+          }
+          return item;
+        })
+      );
+      setPlaylist(updatedPlaylist);
+    };
+    updateDurations();
+  }, []);
+
   const [showModal, setShowModal] = useState<'folder' | 'audio' | null>(null);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const { play, pause, stop, isPlaying } = useAudioPlayer();
+  const { play, pause, stop, isPlaying, currentTime: audioCurrentTime, duration } = useAudioPlayer();
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // Função auxiliar para converter 'MM:SS' ou 'HH:MM:SS' para segundos
+  const durationToSeconds = (durationStr: string) => {
+    const parts = durationStr.split(':').map(Number);
+    if (parts.length === 3) { // HH:MM:SS
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) { // MM:SS
+      return parts[0] * 60 + parts[1];
+    }
+    return 0;
+  };
+
+  // Função para obter duração real do áudio
+  const getAudioDuration = (src: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const audio = new Audio(src);
+      audio.onloadedmetadata = () => {
+        const totalSeconds = Math.floor(audio.duration);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        resolve(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      };
+      audio.onerror = () => resolve('00:00');
+    });
+  };
+
+  // Calcula os tempos de início de cada item
+  let runningTime = new Date().getTime();
+  const playlistWithTimes = playlist.map((item) => {
+    const startTime = new Date(runningTime).toLocaleTimeString('pt-BR', { hour12: false });
+    runningTime += durationToSeconds(item.duration) * 1000;
+    return { ...item, startTime };
+  });
+
+  const remaining = Math.max(0, duration - audioCurrentTime);
+  const finishTime = new Date(Date.now() + remaining * 1000).toLocaleTimeString('pt-BR', { hour12: false });
 
   const handleNext = () => {
     if (currentTrackIndex < playlist.length - 1) {
@@ -209,11 +269,16 @@ export default function App() {
             <section 
               className="w-full h-full flex flex-col bg-slate-900"
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
+              onDrop={async (e) => {
                 const data = e.dataTransfer.getData('application/json');
                 if (data) {
                   const newItem: MediaItem = JSON.parse(data);
-                  setPlaylist([...playlist, newItem]);
+                  if (newItem.src) {
+                    const duration = await getAudioDuration(newItem.src);
+                    setPlaylist([...playlist, { ...newItem, duration }]);
+                  } else {
+                    setPlaylist([...playlist, newItem]);
+                  }
                 }
               }}
             >
@@ -231,16 +296,36 @@ export default function App() {
                             <th className="p-2 font-normal">Artista</th>
                             <th className="p-2 font-normal text-right">Duração</th>
                             <th className="p-2 font-normal text-right">Hora</th>
+                            <th className="p-2 font-normal text-right">Ações</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {playlist.map((item, index) => (
+                        {playlistWithTimes.map((item, index) => (
                             <tr key={item.id} className="border-b border-slate-800 hover:bg-slate-800 transition">
                                 <td className="p-2 text-slate-500">{String(index + 1).padStart(2, '0')}</td>
                                 <td className="p-2 font-medium">{item.name}</td>
                                 <td className="p-2 text-slate-300">Artista Desconhecido</td>
-                                <td className="p-2 text-right font-mono text-slate-300">{item.duration}</td>
-                                <td className="p-2 text-right font-mono text-blue-400">11:00:00</td>
+                                <td className="p-2 text-right">
+                                    <input 
+                                        type="text"
+                                        value={item.duration}
+                                        onChange={(e) => {
+                                            const newPlaylist = [...playlist];
+                                            newPlaylist[index] = { ...newPlaylist[index], duration: e.target.value };
+                                            setPlaylist(newPlaylist);
+                                        }}
+                                        className="bg-transparent text-right font-mono text-slate-300 w-16 border-none focus:outline-none"
+                                    />
+                                </td>
+                                <td className="p-2 text-right font-mono text-blue-400">{item.startTime}</td>
+                                <td className="p-2 text-right">
+                                    <button 
+                                        onClick={() => setPlaylist(playlist.filter((_, i) => i !== index))}
+                                        className="text-red-500 hover:text-red-400 p-1"
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -289,9 +374,9 @@ export default function App() {
         </div>
         <div className="flex-1 flex justify-between items-center gap-2">
             {[
-                { label: 'DECORRIDO', value: '00:08', color: 'text-emerald-500' },
-                { label: 'RESTANTE', value: '02:21', color: 'text-red-500' },
-                { label: 'TÉRMINO FAIXA', value: '16:38:42', color: 'text-white' },
+                { label: 'DECORRIDO', value: formatTime(audioCurrentTime), color: 'text-emerald-500' },
+                { label: 'RESTANTE', value: formatTime(remaining), color: 'text-red-500' },
+                { label: 'TÉRMINO FAIXA', value: isPlaying ? finishTime : '--:--:--', color: 'text-white' },
                 { label: 'HORA ATUAL', value: currentTime.toLocaleTimeString('pt-BR', { hour12: false }), color: 'text-blue-500' },
             ].map(item => (
                 <div key={item.label} className="border border-slate-800 rounded-lg p-3 flex-1 flex flex-col items-center justify-center mx-1 bg-slate-900">

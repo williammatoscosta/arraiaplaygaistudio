@@ -1,13 +1,26 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Howl } from 'howler';
 
 export function useAudioPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const howlRef = useRef<Howl | null>(null);
   const [currentSrc, setCurrentSrc] = useState<string | null>(null);
 
+  useEffect(() => {
+    let interval: number;
+    if (isPlaying && howlRef.current) {
+      interval = setInterval(() => {
+        if (howlRef.current) {
+          setCurrentTime(howlRef.current.seek() as number);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
   const play = useCallback((src: string) => {
-    // Se for a mesma faixa e ela estiver pausada, retoma
     if (howlRef.current && currentSrc === src) {
       if (!howlRef.current.playing()) {
         howlRef.current.play();
@@ -15,13 +28,15 @@ export function useAudioPlayer() {
       return;
     }
 
-    // Se for uma nova faixa, para a anterior e inicia a nova
     if (howlRef.current) howlRef.current.stop();
     
     const sound = new Howl({ 
       src: [src],
       html5: true,
-      onplay: () => setIsPlaying(true),
+      onplay: () => {
+        setIsPlaying(true);
+        setDuration(sound.duration());
+      },
       onpause: () => setIsPlaying(false),
       onstop: () => setIsPlaying(false),
       onend: () => setIsPlaying(false)
@@ -30,6 +45,7 @@ export function useAudioPlayer() {
     sound.play();
     howlRef.current = sound;
     setCurrentSrc(src);
+    setCurrentTime(0);
   }, [currentSrc]);
 
   const pause = useCallback(() => {
@@ -41,9 +57,11 @@ export function useAudioPlayer() {
   const stop = useCallback(() => {
     if (howlRef.current) {
       howlRef.current.stop();
-      setCurrentSrc(null); // Reseta a faixa atual ao parar
+      setCurrentSrc(null);
+      setCurrentTime(0);
+      setDuration(0);
     }
   }, []);
 
-  return { isPlaying, play, pause, stop };
+  return { isPlaying, play, pause, stop, currentTime, duration };
 }
