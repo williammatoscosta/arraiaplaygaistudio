@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {useState, useEffect} from 'react';
+import {useState, useEffect, useMemo} from 'react';
 import {Folder, Calendar, Radio, LayoutGrid, Palette, Settings, Power, Play, Pause, SkipForward, Square} from 'lucide-react';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
@@ -46,10 +46,17 @@ export default function App() {
       { id: '8', name: 'Temperatura', duration: '00:00', isFolder: true },
       { id: '9', name: 'Vinhetas Gerais', duration: '00:00', isFolder: true },
   ]);
-  const [playlist, setPlaylist] = useState<MediaItem[]>([
-    { id: '101', name: 'Música de Teste 1', duration: '06:11', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
-    { id: '102', name: 'Música de Teste 2', duration: '06:11', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
-  ]);
+  const [playlist, setPlaylist] = useState<MediaItem[]>(() => {
+    const saved = localStorage.getItem('playlist');
+    return saved ? JSON.parse(saved) : [
+      { id: '101', name: 'Música de Teste 1', duration: '06:11', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
+      { id: '102', name: 'Música de Teste 2', duration: '06:11', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('playlist', JSON.stringify(playlist));
+  }, [playlist]);
 
   useEffect(() => {
     const updateDurations = async () => {
@@ -104,12 +111,14 @@ export default function App() {
   };
 
   // Calcula os tempos de início de cada item
-  let runningTime = new Date().getTime();
-  const playlistWithTimes = playlist.map((item) => {
-    const startTime = new Date(runningTime).toLocaleTimeString('pt-BR', { hour12: false });
-    runningTime += durationToSeconds(item.duration) * 1000;
-    return { ...item, startTime };
-  });
+  const playlistWithTimes = useMemo(() => {
+    let runningTime = new Date().getTime();
+    return playlist.map((item) => {
+      const startTime = new Date(runningTime).toLocaleTimeString('pt-BR', { hour12: false });
+      runningTime += durationToSeconds(item.duration) * 1000;
+      return { ...item, startTime };
+    });
+  }, [playlist]);
 
   const remaining = Math.max(0, duration - audioCurrentTime);
   const finishTime = new Date(Date.now() + remaining * 1000).toLocaleTimeString('pt-BR', { hour12: false });
@@ -268,19 +277,6 @@ export default function App() {
           <Panel defaultSize={50} minSize={30}>
             <section 
               className="w-full h-full flex flex-col bg-slate-900"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={async (e) => {
-                const data = e.dataTransfer.getData('application/json');
-                if (data) {
-                  const newItem: MediaItem = JSON.parse(data);
-                  if (newItem.src) {
-                    const duration = await getAudioDuration(newItem.src);
-                    setPlaylist([...playlist, { ...newItem, duration }]);
-                  } else {
-                    setPlaylist([...playlist, newItem]);
-                  }
-                }
-              }}
             >
               <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                 <h2 className="text-lg font-medium">
@@ -299,35 +295,73 @@ export default function App() {
                             <th className="p-2 font-normal text-right">Ações</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {playlistWithTimes.map((item, index) => (
-                            <tr key={item.id} className="border-b border-slate-800 hover:bg-slate-800 transition">
-                                <td className="p-2 text-slate-500">{String(index + 1).padStart(2, '0')}</td>
-                                <td className="p-2 font-medium">{item.name}</td>
-                                <td className="p-2 text-slate-300">Artista Desconhecido</td>
-                                <td className="p-2 text-right">
-                                    <input 
-                                        type="text"
-                                        value={item.duration}
-                                        onChange={(e) => {
-                                            const newPlaylist = [...playlist];
-                                            newPlaylist[index] = { ...newPlaylist[index], duration: e.target.value };
-                                            setPlaylist(newPlaylist);
-                                        }}
-                                        className="bg-transparent text-right font-mono text-slate-300 w-16 border-none focus:outline-none"
-                                    />
-                                </td>
-                                <td className="p-2 text-right font-mono text-blue-400">{item.startTime}</td>
-                                <td className="p-2 text-right">
-                                    <button 
-                                        onClick={() => setPlaylist(playlist.filter((_, i) => i !== index))}
-                                        className="text-red-500 hover:text-red-400 p-1"
-                                    >
-                                        Delete
-                                    </button>
-                                </td>
+                    <tbody
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={async (e) => {
+                            e.preventDefault();
+                            const data = e.dataTransfer.getData('application/json');
+                            if (data) {
+                                const newItem: MediaItem = JSON.parse(data);
+                                const uniqueItem = { ...newItem, id: `${newItem.id}-${Date.now()}` };
+                                const duration = newItem.src ? await getAudioDuration(newItem.src) : '00:00';
+                                setPlaylist([ ...playlist, { ...uniqueItem, duration }]);
+                            }
+                        }}
+                    >
+                        {playlistWithTimes.length === 0 ? (
+                            <tr>
+                                <td colSpan={6} className="h-32 text-center text-slate-500 italic">Arraste arquivos aqui para começar</td>
                             </tr>
-                        ))}
+                        ) : (
+                            playlistWithTimes.map((item, index) => (
+                                <tr 
+                                    key={item.id} 
+                                    className={`border-b border-slate-800 transition ${index === currentTrackIndex ? 'bg-blue-900/30' : 'hover:bg-slate-800'}`}
+                                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-b-2', 'border-blue-500'); }}
+                                    onDragLeave={(e) => { e.currentTarget.classList.remove('border-b-2', 'border-blue-500'); }}
+                                    onDrop={async (e) => {
+                                        e.stopPropagation();
+                                        e.currentTarget.classList.remove('border-b-2', 'border-blue-500');
+                                        const data = e.dataTransfer.getData('application/json');
+                                        if (data) {
+                                            const newItem: MediaItem = JSON.parse(data);
+                                            const uniqueItem = { ...newItem, id: `${newItem.id}-${Date.now()}` };
+                                            const duration = newItem.src ? await getAudioDuration(newItem.src) : '00:00';
+                                            const newPlaylist = [...playlist];
+                                            newPlaylist.splice(index + 1, 0, { ...uniqueItem, duration });
+                                            setPlaylist(newPlaylist);
+                                        }
+                                    }}
+                                >
+                                    <td className={`p-2 ${index === currentTrackIndex ? 'text-blue-400' : 'text-slate-500'}`}>
+                                        {index === currentTrackIndex ? <Play size={16} fill="currentColor" /> : String(index + 1).padStart(2, '0')}
+                                    </td>
+                                    <td className={`p-2 font-medium ${index === currentTrackIndex ? 'text-white' : 'text-slate-200'}`}>{item.name}</td>
+                                    <td className="p-2 text-slate-300">Artista Desconhecido</td>
+                                    <td className="p-2 text-right">
+                                        <input 
+                                            type="text"
+                                            value={item.duration}
+                                            onChange={(e) => {
+                                                const newPlaylist = [...playlist];
+                                                newPlaylist[index] = { ...newPlaylist[index], duration: e.target.value };
+                                                setPlaylist(newPlaylist);
+                                            }}
+                                            className={`bg-transparent text-right font-mono w-16 border-none focus:outline-none ${index === currentTrackIndex ? 'text-blue-300' : 'text-slate-300'}`}
+                                        />
+                                    </td>
+                                    <td className="p-2 text-right font-mono text-blue-400">{item.startTime}</td>
+                                    <td className="p-2 text-right">
+                                        <button 
+                                            onClick={() => setPlaylist(playlist.filter((_, i) => i !== index))}
+                                            className="text-red-500 hover:text-red-400"
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
               </div>
