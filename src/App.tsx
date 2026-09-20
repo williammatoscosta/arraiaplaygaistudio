@@ -195,8 +195,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       <header className="h-14 border-b border-slate-800 flex items-center px-4 shrink-0 gap-6">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center font-bold">R</div>
-          <h1 className="text-xl font-bold tracking-tight">ROADIC</h1>
+          <h1 className="text-xl font-bold tracking-tight">Arraia Play</h1>
         </div>
         
         <nav className="flex items-center gap-4 text-sm text-slate-300 flex-1 justify-around">

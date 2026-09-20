@@ -1,5 +1,5 @@
 {
-  "name": "ROADIC Automation Radio",
+  "name": "Arraia Play",
   "description": "A radio automation software for Windows that allows file linking and JSON-based configuration without a database.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
