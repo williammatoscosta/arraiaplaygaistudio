@@ -4,7 +4,7 @@
  */
 
 import {useState, useEffect, useMemo} from 'react';
-import {Folder, Calendar, Radio, LayoutGrid, Palette, Settings, Power, Play, Pause, SkipForward, Square} from 'lucide-react';
+import {Folder, Calendar, Radio, RotateCw, Palette, Settings, Power, Play, Pause, SkipForward, Square, X} from 'lucide-react';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { MediaItem } from './types';
@@ -130,7 +130,7 @@ export default function App() {
       // Reproduz a nova faixa automaticamente
       const nextTrack = playlist[nextIndex];
       if (nextTrack && nextTrack.src) {
-        play(nextTrack.src);
+        play(nextTrack.src, crossfadeSettings);
       }
     }
   };
@@ -138,6 +138,10 @@ export default function App() {
       const saved = localStorage.getItem('roadic-cartwall');
       return saved ? JSON.parse(saved) : Array(16).fill(null);
   });
+
+  const refreshLibrary = () => {
+    alert('Biblioteca atualizada!');
+  };
 
   const addCart = (index: number) => {
     const name = prompt('Nome do arquivo para o cart:');
@@ -182,25 +186,63 @@ export default function App() {
     item.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const [isCrossfadeModalOpen, setIsCrossfadeModalOpen] = useState(false);
+  const [crossfadeSettings, setCrossfadeSettings] = useState({
+    autoSkip: false,
+    pauseAfterSkip: false,
+    enableCrossfade: true,
+    manual: {
+      mixNext: true,
+      mixNextMseg: 2000,
+      fadeOut: true,
+      fadeOutMseg: 2,
+      fadeIn: false,
+      fadeInMseg: 1000,
+    },
+    automatic: {
+      enabled: false,
+      mode: 'mix', // 'none' | 'pause' | 'mix'
+      pauseMseg: 1000,
+      mixMseg: 1000,
+      fadeIn: true,
+      fadeInMseg: 1000,
+      fadeOut: true,
+      fadeOutMseg: 1000,
+    }
+  });
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isOptionsMenuOpen && 
+          !(event.target as HTMLElement).closest('.options-menu-container') &&
+          !(event.target as HTMLElement).closest('.options-button')) {
+        setIsOptionsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOptionsMenuOpen]);
+
   const menuItems = [
     { icon: Folder, label: 'Arquivo' },
     { icon: Calendar, label: 'Agendador' },
     { icon: Radio, label: 'Transmissão' },
-    { icon: LayoutGrid, label: 'Utilitários' },
+    { icon: RotateCw, label: 'Utilitários' },
     { icon: Palette, label: 'Temas' },
-    { icon: Settings, label: 'Opções' },
+    { icon: Settings, label: 'Opções', onClick: () => setIsOptionsMenuOpen(!isOptionsMenuOpen), className: 'options-button' },
   ];
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      <header className="h-14 border-b border-slate-800 flex items-center px-4 shrink-0 gap-6">
+      <header className="h-14 border-b border-slate-800 flex items-center px-4 shrink-0 gap-6 relative">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold tracking-tight">Arraia Play</h1>
         </div>
         
         <nav className="flex items-center gap-4 text-sm text-slate-300 flex-1 justify-around">
           {menuItems.map(item => (
-            <button key={item.label} className="flex items-center gap-2 hover:text-white transition">
+            <button key={item.label} onClick={item.onClick} className={`flex items-center gap-2 hover:text-white transition ${item.className || ''}`}>
               <item.icon size={18} />
               {item.label}
             </button>
@@ -209,6 +251,50 @@ export default function App() {
 
         <div className="ml-auto flex items-center gap-4">
         </div>
+        {isOptionsMenuOpen && (
+          <div className="absolute top-14 right-4 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-2 z-50 w-48 options-menu-container">
+            <button onClick={() => { setIsOptionsMenuOpen(false); setIsCrossfadeModalOpen(true); }} className="w-full text-left px-4 py-2 hover:bg-slate-800 rounded text-sm text-slate-200">Crossfade</button>
+            <button className="w-full text-left px-4 py-2 hover:bg-slate-800 rounded text-sm text-slate-200">Outra Opção</button>
+          </div>
+        )}
+        {isCrossfadeModalOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+                <div className="bg-slate-800 p-6 rounded-lg w-full max-w-2xl border border-slate-700">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold">Configurações de Crossfade</h3>
+                        <button onClick={() => setIsCrossfadeModalOpen(false)}><X size={20}/></button>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={crossfadeSettings.autoSkip} onChange={e => setCrossfadeSettings({...crossfadeSettings, autoSkip: e.target.checked})} /> Pular automaticamente para a próxima faixa</label>
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={crossfadeSettings.pauseAfterSkip} onChange={e => setCrossfadeSettings({...crossfadeSettings, pauseAfterSkip: e.target.checked})} /> e suspender a reprodução</label>
+                        <label className="flex items-center gap-2"><input type="checkbox" checked={crossfadeSettings.enableCrossfade} onChange={e => setCrossfadeSettings({...crossfadeSettings, enableCrossfade: e.target.checked})} /> Permitir mixagem cruzada</label>
+
+                        <fieldset className="border border-slate-700 p-4 rounded">
+                            <legend className="px-2 font-semibold text-orange-400">Troca de faixa manual</legend>
+                            <label className="flex items-center gap-2 mb-2"><input type="checkbox" checked={crossfadeSettings.manual.mixNext} onChange={e => setCrossfadeSettings({...crossfadeSettings, manual: {...crossfadeSettings.manual, mixNext: e.target.checked}})} /> Mixar próxima faixa com a atual <input type="number" value={crossfadeSettings.manual.mixNextMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, manual: {...crossfadeSettings.manual, mixNextMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                            <label className="flex items-center gap-2 mb-2"><input type="checkbox" checked={crossfadeSettings.manual.fadeOut} onChange={e => setCrossfadeSettings({...crossfadeSettings, manual: {...crossfadeSettings.manual, fadeOut: e.target.checked}})} /> Diminuir gradualmente o volume no final da faixa <input type="number" value={crossfadeSettings.manual.fadeOutMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, manual: {...crossfadeSettings.manual, fadeOutMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                            <label className="flex items-center gap-2"><input type="checkbox" checked={crossfadeSettings.manual.fadeIn} onChange={e => setCrossfadeSettings({...crossfadeSettings, manual: {...crossfadeSettings.manual, fadeIn: e.target.checked}})} /> Aumentar gradualmente o volume no início da faixa <input type="number" value={crossfadeSettings.manual.fadeInMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, manual: {...crossfadeSettings.manual, fadeInMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                        </fieldset>
+
+                        <fieldset className="border border-slate-700 p-4 rounded">
+                            <legend className="px-2 font-semibold text-orange-400">Troca de faixa automática</legend>
+                            <label className="flex items-center gap-2 mb-2"><input type="checkbox" checked={crossfadeSettings.automatic.enabled} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, enabled: e.target.checked}})} /> Ativar troca automática</label>
+                            <div className="ml-6 space-y-2">
+                                <label className="flex items-center gap-2"><input type="radio" name="autoMode" checked={crossfadeSettings.automatic.mode === 'none'} onChange={() => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, mode: 'none'}})} /> Não fazer nada</label>
+                                <label className="flex items-center gap-2"><input type="radio" name="autoMode" checked={crossfadeSettings.automatic.mode === 'pause'} onChange={() => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, mode: 'pause'}})} /> Adicionar pausa entre faixas <input type="number" value={crossfadeSettings.automatic.pauseMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, pauseMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                                <label className="flex items-center gap-2"><input type="radio" name="autoMode" checked={crossfadeSettings.automatic.mode === 'mix'} onChange={() => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, mode: 'mix'}})} /> Mixar próxima faixa com a atual <input type="number" value={crossfadeSettings.automatic.mixMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, mixMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                            </div>
+                            <div className="ml-6 mt-3 space-y-2 border-t border-slate-700 pt-3">
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={crossfadeSettings.automatic.fadeIn} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, fadeIn: e.target.checked}})} /> Aumentar gradualmente o volume no início da faixa <input type="number" value={crossfadeSettings.automatic.fadeInMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, fadeInMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={crossfadeSettings.automatic.fadeOut} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, fadeOut: e.target.checked}})} /> Diminuir gradualmente o volume no final da faixa <input type="number" value={crossfadeSettings.automatic.fadeOutMseg} onChange={e => setCrossfadeSettings({...crossfadeSettings, automatic: {...crossfadeSettings.automatic, fadeOutMseg: Number(e.target.value)}})} className="bg-slate-900 w-20 p-1 rounded" /> mseg</label>
+                            </div>
+                        </fieldset>
+                    </div>
+                    <button onClick={() => setIsCrossfadeModalOpen(false)} className="w-full mt-6 bg-blue-600 py-2 rounded font-bold">Salvar</button>
+                </div>
+            </div>
+        )}
       </header>
       <main className="flex-1 flex overflow-hidden">
         <PanelGroup direction="horizontal" className="w-full h-full">
@@ -221,8 +307,8 @@ export default function App() {
                 <button onClick={() => setShowModal('audio')} className="flex-1 hover:bg-slate-800 py-2 rounded text-xs font-medium flex items-center justify-center gap-2">
                     <Radio size={14} /> Áudio
                 </button>
-                <button className="flex-1 hover:bg-slate-800 py-2 rounded text-xs font-medium flex items-center justify-center">
-                    <LayoutGrid size={14} />
+                <button onClick={refreshLibrary} className="flex-1 hover:bg-slate-800 py-2 rounded text-xs font-medium flex items-center justify-center">
+                    <RotateCw size={14} />
                 </button>
               </div>
               {showModal && (
