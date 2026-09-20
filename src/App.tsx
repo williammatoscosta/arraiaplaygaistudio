@@ -382,7 +382,7 @@ export default function App() {
                   <button 
                     key={index}
                     onClick={() => addCart(index)}
-                    className={`rounded-lg border flex flex-col items-center justify-center text-xs p-2 text-center transition ${cart ? 'bg-slate-700 border-slate-600' : 'bg-slate-900 border-slate-800 hover:border-slate-600'}`}
+                    className={`rounded-lg border flex flex-col items-center justify-center text-xs p-2 text-center transition ${cart ? 'border-slate-600' : 'border-slate-800 hover:border-slate-600'}`}
                   >
                     {cart ? (
                         <>
@@ -413,8 +413,8 @@ export default function App() {
                 { label: 'TÉRMINO FAIXA', value: isPlaying ? finishTime : '--:--:--', color: 'text-white' },
                 { label: 'HORA ATUAL', value: currentTime.toLocaleTimeString('pt-BR', { hour12: false }), color: 'text-blue-500' },
             ].map(item => (
-                <div key={item.label} className="border border-slate-800 rounded-lg p-3 flex-1 flex flex-col items-center justify-center mx-1 bg-slate-900">
-                    <span className="text-[10px] font-bold text-slate-400 tracking-wider">{item.label}</span>
+                <div key={item.label} className="flex-1 flex flex-col items-center justify-center mx-1">
+                    <span className="text-[10px] font-bold text-slate-500 tracking-wider mb-1">{item.label}</span>
                     <span className={`text-xl font-mono font-bold ${item.color}`}>{item.value}</span>
                 </div>
             ))}
